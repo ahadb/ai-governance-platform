@@ -2,28 +2,32 @@
 
 # Policy Engine Configuration
 policies:
-  # Enable/disable policies via configuration
+  # PII Detection Policy
   - name: pii_detection
     enabled: true
     config:
       redact_emails: true
       redact_phones: true
       redact_ssn: true
+      redact_credit_cards: true
+      redact_bank_accounts: true
       
+  # MNPI Check Policy
   - name: mnpi_check
-    enabled: false  # Enable for finance vertical
-    config:
-      watch_list: /data/securities.txt
-      
-  - name: prompt_injection
     enabled: true
     config:
-      strict_mode: false
-      
-  - name: hipaa_compliance
-    enabled: false  # Enable for healthcare vertical
-    config:
-      phi_detection: true
+      # watch_list: /data/securities.txt  # Optional: path to watchlist file
+      securities: ["AAPL", "MSFT", "GOOGL"]  # Restricted securities list
+  #     
+  # - name: prompt_injection
+  #   enabled: true
+  #   config:
+  #     strict_mode: false
+  #     
+  # - name: hipaa_compliance
+  #   enabled: false  # Enable for healthcare vertical
+  #   config:
+  #     phi_detection: true
 
 # Model Router Configuration
 model_router:
