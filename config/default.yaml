@@ -1,0 +1,52 @@
+# Default configuration for AI Governance Platform
+
+# Policy Engine Configuration
+policies:
+  # Enable/disable policies via configuration
+  - name: pii_detection
+    enabled: true
+    config:
+      redact_emails: true
+      redact_phones: true
+      redact_ssn: true
+      
+  - name: mnpi_check
+    enabled: false  # Enable for finance vertical
+    config:
+      watch_list: /data/securities.txt
+      
+  - name: prompt_injection
+    enabled: true
+    config:
+      strict_mode: false
+      
+  - name: hipaa_compliance
+    enabled: false  # Enable for healthcare vertical
+    config:
+      phi_detection: true
+
+# Model Router Configuration
+model_router:
+  default_model: gpt-4
+  fallback_model: gpt-3.5-turbo
+  timeout_seconds: 30
+  max_retries: 3
+
+# Audit Configuration
+audit:
+  async_logging: true
+  retention_days: 90
+  batch_size: 100
+
+# HITL Configuration
+hitl:
+  queue_name: hitl_reviews
+  timeout_seconds: 3600
+  auto_approve_after_hours: 24
+
+# Gateway Configuration
+gateway:
+  rate_limit_per_minute: 100
+  max_request_size_mb: 10
+  enable_cors: true
+
