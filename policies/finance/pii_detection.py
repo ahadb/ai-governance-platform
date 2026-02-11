@@ -73,6 +73,8 @@ class PIIDetectionPolicy(PolicyModule):
         if not self._redact_phones:
             return []
         
+        # TODO: Consider using a PII detection library (e.g., presidio) for better accuracy
+        # These regex patterns work but may have false positives/negatives
         # Phone patterns: (123) 456-7890, 123-456-7890, 123.456.7890, +1-123-456-7890
         phone_patterns = [
             r'\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',  # US format
