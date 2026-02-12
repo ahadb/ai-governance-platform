@@ -12,6 +12,93 @@
 
 See [architectural-decision-records/](architectural-decision-records/) for detailed design decisions and trade-offs.
 
+## Logging
+
+The platform uses **event-style structured logging** with JSON output. All log entries follow a consistent format for machine-readability and queryability.
+
+See [LOGGING.md](LOGGING.md) for:
+- Event format specification
+- Common event patterns
+- Best practices
+- Querying examples
+
+## Auditability
+
+The platform maintains a **complete, immutable audit trail** for compliance and forensics. Every request is tracked end-to-end with full traceability.
+
+### Audit Trail Features
+
+**End-to-End Correlation:**
+- Every request receives a unique `trace_id` (UUID)
+- `trace_id` flows through all components (Gateway → Policy Engine → Model Router)
+- Complete request lifecycle captured in database
+- Query all events for a single request: `SELECT * FROM audit_events WHERE trace_id = '...'`
+
+**Component-Level Granularity:**
+- **Policy Engine** audits: policy evaluations, outcomes, violations, performance metrics
+- **Model Router** audits: routing decisions, provider selection, fallbacks, retries
+- **Gateway** audits: request lifecycle, high-level flow coordination
+- Each component owns its audit domain for clear separation of concerns
+
+**Structured Event Storage:**
+- All audit events stored in PostgreSQL with JSONB for flexible querying
+- Immutable audit trail (write-only, tamper-proof)
+- Indexed for fast queries by `trace_id`, `request_id`, `user_id`, `event_type`
+- Long-term retention for regulatory compliance (configurable)
+
+**Compliance-Ready:**
+- Complete request/response lifecycle tracking
+- Policy violation detection and reporting
+- User activity audit trail
+- Performance metrics and timing data
+- Ready for regulatory audits (SOC 2, HIPAA, FINRA, etc.)
+
+### Querying the Audit Trail
+
+**By Trace ID (End-to-End Request):**
+```sql
+SELECT * FROM audit_events 
+WHERE trace_id = '550e8400-e29b-41d4-a716-446655440000'
+ORDER BY timestamp;
+```
+
+**By User ID:**
+```sql
+SELECT * FROM audit_events 
+WHERE event_data->>'user_id' = 'user123'
+ORDER BY timestamp DESC;
+```
+
+**Policy Violations:**
+```sql
+SELECT * FROM audit_events 
+WHERE event_data->>'outcome' IN ('BLOCK', 'ESCALATE')
+ORDER BY timestamp DESC;
+```
+
+**By Event Type:**
+```sql
+SELECT * FROM audit_events 
+WHERE event_type = 'policy_evaluation_complete'
+AND timestamp > NOW() - INTERVAL '24 hours';
+```
+
+### Audit vs Logging
+
+**Logging (Operational):**
+- High-volume, short retention (days/weeks)
+- Real-time monitoring and debugging
+- Structured JSON logs for operational visibility
+- Used by: DevOps, SRE, developers
+
+**Audit (Compliance):**
+- Lower volume, long retention (years)
+- Immutable, tamper-proof database records
+- Queryable for compliance and forensics
+- Used by: Compliance, Legal, Risk, Internal Audit
+
+The platform provides both: operational logging for day-to-day operations, and a compliance-grade audit trail for regulatory requirements.
+
 ## What This Platform Is
 
 An **AI governance control plane** for enterprise LLM deployments. It sits between users and LLMs, enforcing policies, routing requests, and maintaining complete audit trails.

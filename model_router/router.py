@@ -7,8 +7,11 @@ Handles provider selection, retries, fallbacks, and error handling.
 import time
 from typing import List, Optional
 
+from common.logging import get_logger
+from audit.service import AuditService
 from model_router.config import ModelRouterConfig
 from model_router.exceptions import (
+    AuthenticationError,
     ModelNotFoundError,
     ModelRouterError,
     ProviderError,
@@ -22,6 +25,8 @@ from model_router.providers import (
     OpenAIProvider,
 )
 
+logger = get_logger(__name__)
+
 
 class ModelRouter:
     """
@@ -34,18 +39,20 @@ class ModelRouter:
     - Error handling and timeouts
     """
 
-    def __init__(self, config: ModelRouterConfig):
+    def __init__(self, config: ModelRouterConfig, audit: Optional[AuditService] = None):
         """
         Initialize the Model Router.
         
         Args:
             config: ModelRouterConfig with provider settings, timeouts, retries
+            audit: AuditService for audit logging (optional)
             
         Raises:
             AuthenticationError: If required API keys are missing
         """
         self._config = config
         self._providers: List[LLMProvider] = []
+        self._audit = audit
         
         # Initialize providers based on available API keys
         self._initialize_providers()
@@ -63,24 +70,36 @@ class ModelRouter:
                     )
                 )
             except Exception as e:
-                # TODO: Log warning instead of silently failing
-                pass
+                logger.warning(
+                    "provider_initialization_failed",
+                    provider="ollama",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
         
         # Initialize OpenAI if API key is available
         if self._config.openai_api_key:
             try:
                 self._providers.append(OpenAIProvider(self._config.openai_api_key))
             except Exception as e:
-                # TODO: Log warning instead of silently failing
-                pass
+                logger.warning(
+                    "provider_initialization_failed",
+                    provider="openai",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
         
         # Initialize Anthropic if API key is available
         if self._config.anthropic_api_key:
             try:
                 self._providers.append(AnthropicProvider(self._config.anthropic_api_key))
             except Exception as e:
-                # TODO: Log warning instead of silently failing
-                pass
+                logger.warning(
+                    "provider_initialization_failed",
+                    provider="anthropic",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
         
         if not self._providers:
             raise ModelRouterError(
@@ -124,26 +143,115 @@ class ModelRouter:
             ProviderError: If all retries and fallbacks fail
             TimeoutError: If request times out
         """
+        request_id = request.metadata.get("request_id", "unknown") if request.metadata else "unknown"
+        trace_id = request.metadata.get("trace_id") if request.metadata else None
+        
         # Determine which model to use
         model_to_use = request.model or self._config.default_model
         
         try:
-            return self._route_with_retries(request, model_to_use)
+            response = self._route_with_retries(request, model_to_use)
+            
+            # Audit: Routing success
+            if self._audit:
+                self._audit.log(
+                    request_id,
+                    "routing_success",
+                    {
+                        "model": response.model,
+                        "provider": response.provider,
+                        "latency_ms": response.latency_ms,
+                        "trace_id": trace_id,
+                    },
+                )
+            
+            return response
         except (ProviderError, ModelNotFoundError) as e:
             # If primary fails and fallback is configured, try fallback
             if self._config.fallback_model and model_to_use != self._config.fallback_model:
+                logger.warning(
+                    "model_fallback_triggered",
+                    primary_model=model_to_use,
+                    fallback_model=self._config.fallback_model,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                
+                # Audit: Fallback triggered
+                if self._audit:
+                    self._audit.log(
+                        request_id,
+                        "model_fallback_triggered",
+                        {
+                            "primary_model": model_to_use,
+                            "fallback_model": self._config.fallback_model,
+                            "error": str(e),
+                            "trace_id": trace_id,
+                        },
+                    )
+                
                 try:
                     # Create new request with fallback model
                     fallback_request = request.model_copy(update={"model": self._config.fallback_model})
-                    return self._route_with_retries(fallback_request, self._config.fallback_model)
+                    response = self._route_with_retries(fallback_request, self._config.fallback_model)
+                    
+                    # Audit: Fallback success
+                    if self._audit:
+                        self._audit.log(
+                            request_id,
+                            "routing_success",
+                            {
+                                "model": response.model,
+                                "provider": response.provider,
+                                "latency_ms": response.latency_ms,
+                                "used_fallback": True,
+                                "trace_id": trace_id,
+                            },
+                        )
+                    
+                    return response
                 except Exception as fallback_error:
                     # Both primary and fallback failed
+                    logger.error(
+                        "model_fallback_failed",
+                        primary_model=model_to_use,
+                        fallback_model=self._config.fallback_model,
+                        primary_error=str(e),
+                        fallback_error=str(fallback_error),
+                    )
+                    
+                    # Audit: Fallback failed
+                    if self._audit:
+                        self._audit.log(
+                            request_id,
+                            "routing_failed",
+                            {
+                                "primary_model": model_to_use,
+                                "fallback_model": self._config.fallback_model,
+                                "primary_error": str(e),
+                                "fallback_error": str(fallback_error),
+                                "trace_id": trace_id,
+                            },
+                        )
+                    
                     raise ProviderError(
                         f"Both primary model '{model_to_use}' and fallback model '{self._config.fallback_model}' failed. "
                         f"Primary error: {e}, Fallback error: {fallback_error}"
                     ) from fallback_error
             else:
                 # No fallback configured or already tried fallback
+                # Audit: Routing failed
+                if self._audit:
+                    self._audit.log(
+                        request_id,
+                        "routing_failed",
+                        {
+                            "model": model_to_use,
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "trace_id": trace_id,
+                        },
+                    )
                 raise
 
     def _route_with_retries(

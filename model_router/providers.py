@@ -11,8 +11,11 @@ from typing import List, Optional
 
 import httpx
 
+from common.logging import get_logger
 from model_router.exceptions import ProviderError, TimeoutError
 from model_router.models import LLMRequest, LLMResponse
+
+logger = get_logger(__name__)
 
 
 class LLMProvider(ABC):
