@@ -1,115 +1,72 @@
 """
-Main entry point for AI Governance Platform.
+Main entry point for AI Governance Platform Gateway.
 
-Demonstrates MNPI and PII detection policies in action.
+Initializes all components and starts the FastAPI server.
 """
 
 from policy_engine.engine import PolicyEngine
-from policy_engine.models import PolicyContext, PolicyOutcome
 from policy_engine.registry import PolicyRegistry
+from model_router import ModelRouter, load_router_config
+from gateway import create_app, GatewayOrchestrator
 from policies.finance import MNPIPolicy, PIIDetectionPolicy
+from policies.example_policy import ExamplePolicy
 
 
-def evaluate_and_display(engine: PolicyEngine, prompt: str, description: str):
-    """Helper function to evaluate a prompt and display results."""
-    print(f"\n{'='*70}")
-    print(f"Test: {description}")
-    print(f"{'='*70}")
-    print(f"Prompt: {prompt}")
+def create_gateway_app(config_path: str = "config/default.yaml"):
+    """
+    Create and configure the Gateway application.
     
-    context = PolicyContext(
-        prompt=prompt,
-        user_id="user123",
-        checkpoint="input",
+    Args:
+        config_path: Path to configuration YAML file
+        
+    Returns:
+        Configured FastAPI app
+    """
+    # Initialize Policy Engine
+    print("Initializing Policy Engine...")
+    policy_registry = PolicyRegistry()
+    
+    # Register policies
+    policy_registry.register("example_policy", ExamplePolicy())
+    policy_registry.register("pii_detection", PIIDetectionPolicy())
+    policy_registry.register("mnpi_check", MNPIPolicy())
+    
+    # Create engine with config
+    policy_engine = PolicyEngine(policy_registry, config_path=config_path)
+    print(f"Policy Engine initialized with {len(policy_engine.get_active_policies())} active policies")
+    
+    # Initialize Model Router
+    print("Initializing Model Router...")
+    router_config = load_router_config(config_path)
+    model_router = ModelRouter(router_config)
+    print(f"Model Router initialized with providers: {model_router.get_providers()}")
+    
+    # Create orchestrator
+    orchestrator = GatewayOrchestrator(
+        policy_engine=policy_engine,
+        model_router=model_router,
     )
     
-    result = engine.evaluate(context)
+    # Create FastAPI app
+    app = create_app(orchestrator, enable_cors=True)
     
-    print(f"\nResult:")
-    print(f"  Final Outcome: {result.final_outcome}")
-    print(f"  Reason: {result.final_result.reason}")
-    print(f"  Policies Evaluated: {len(result.evaluated_policies)}")
-    print(f"  Evaluation Time: {result.evaluation_time_ms:.2f}ms")
-    
-    if result.all_results:
-        print(f"\nIndividual Policy Results:")
-        for policy_result in result.all_results:
-            print(f"  - {policy_result.policy_name}: {policy_result.outcome}")
-            print(f"    Reason: {policy_result.reason}")
-            if policy_result.outcome == PolicyOutcome.REDACT:
-                print(f"    Modified Content: {policy_result.modified_content[:100]}...")
-                if policy_result.redaction_tokens:
-                    print(f"    Redactions: {len(policy_result.redaction_tokens)} items")
+    return app
 
 
-def main():
-    """Demonstrate MNPI and PII detection policies."""
-    
-    # Step 1: Create registry and register policies
-    print("Setting up policy engine...")
-    registry = PolicyRegistry()
-    
-    # Register financial policies
-    registry.register("pii_detection", PIIDetectionPolicy())
-    registry.register("mnpi_check", MNPIPolicy())
-    
-    # Step 2: Create engine with config
-    config_path = "config/default.yaml"
-    engine = PolicyEngine(registry, config_path=config_path)
-    
-    print(f"\nActive policies: {len(engine.get_active_policies())}")
-    for name, _ in engine.get_active_policies():
-        print(f"  - {name}")
-    
-    # Step 3: Test different scenarios
-    
-    # Test 1: Clean prompt (should pass)
-    evaluate_and_display(
-        engine,
-        "What is the weather today?",
-        "Clean prompt (no PII, no MNPI)"
-    )
-    
-    # Test 2: PII in prompt (should REDACT)
-    evaluate_and_display(
-        engine,
-        "Please send the report to john.doe@example.com or call me at 555-123-4567",
-        "PII Detection (email and phone)"
-    )
-    
-    # Test 3: SSN in prompt (should REDACT)
-    evaluate_and_display(
-        engine,
-        "My social security number is 123-45-6789",
-        "PII Detection (SSN)"
-    )
-    
-    # Test 4: Restricted security (should BLOCK if configured)
-    evaluate_and_display(
-        engine,
-        "What's the current price of AAPL stock?",
-        "MNPI Check (ticker symbol - may block if on watchlist)"
-    )
-    
-    # Test 5: MNPI keywords (should BLOCK)
-    evaluate_and_display(
-        engine,
-        "I have insider information about an upcoming merger",
-        "MNPI Check (insider information keywords)"
-    )
-    
-    # Test 6: Combined PII and MNPI (BLOCK should win due to precedence)
-    evaluate_and_display(
-        engine,
-        "Contact me at user@example.com about the confidential deal",
-        "Combined PII + MNPI (precedence test)"
-    )
-    
-    print(f"\n{'='*70}")
-    print("All tests completed!")
-    print(f"{'='*70}")
+# Create app instance for direct import
+app = create_gateway_app()
 
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    
+    print("\n" + "="*70)
+    print("AI Governance Platform Gateway")
+    print("="*70)
+    print("Starting server on http://0.0.0.0:8000")
+    print("API docs available at http://0.0.0.0:8000/docs")
+    print("="*70 + "\n")
+    
+    # Use import string for reload to work properly
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 

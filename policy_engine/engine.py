@@ -82,8 +82,8 @@ class PolicyEngine:
                 self._active_policies.append((policy_name, policy_module))
         
         if missing_policies:
-            # Log warning but don't fail - some policies might be optional
-            # In production, you might want to raise an error instead
+            # TODO: Replace print() with proper logging (structlog)
+            # TODO: Make this configurable - fail hard in production, warn in dev
             print(f"Warning: Config references policies not in registry: {missing_policies}")
 
     def get_active_policies(self) -> List[tuple[str, PolicyModule]]:

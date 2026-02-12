@@ -1,0 +1,25 @@
+{
+    "content": " Hello! AI Governance refers to the set of principles, practices, and policies designed to ensure that Artificial Intelligence (AI) systems are developed, deployed, and used in a responsible, ethical, and transparent manner. It encompasses various aspects such as:\n\n1. Accountability: Establishing clear lines of responsibility for AI outcomes and decision-making.\n2. Transparency: Making the inner workings of AI systems understandable to humans and ensuring that they can be audited or inspected if necessary.\n3. Fairness: Ensuring that AI systems do not perpetuate or amplify biases and treat all individuals equitably.\n4. Privacy and Security: Protecting personal data and maintaining security in the development, deployment, and use of AI systems.\n5. Robustness and reliability: Ensuring that AI systems can function correctly under various conditions and provide accurate results.\n6. Human oversight: Implementing mechanisms for human intervention or supervision when necessary.\n7. Public trust: Building and maintaining trust in AI by involving stakeholders, including the public, in decision-making processes related to AI.\n8. Regulation and standards: Developing and adhering to relevant regulations and industry standards to guide AI development and use.\n\nAI governance aims to minimize potential risks associated with AI, such as bias, discrimination, misuse of data, or unintended consequences, while maximizing its benefits for society.",
+    "model": "mistral",
+    "provider": "ollama",
+    "finish_reason": "stop",
+    "usage": {
+        "prompt_tokens": 5,
+        "completion_tokens": 205,
+        "total_tokens": 210
+    },
+    "policy_outcome": "ALLOW",
+    "redacted": false,
+    "metadata": {
+        "ollama_base_url": "http://localhost:11434",
+        "model_family": "mistral",
+        "router_attempt": 1,
+        "router_total_attempts": 4,
+        "input_policy_outcome": "ALLOW",
+        "output_policy_outcome": "ALLOW",
+        "policies_evaluated": [
+            "pii_detection",
+            "mnpi_check"
+        ]
+    }
+}
