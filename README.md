@@ -1,27 +1,27 @@
 # AI Governance Platform
 
 > **Status:** 🚧 Work in Progress  
-> This project is under active development. Core policy engine is implemented, but gateway, model router, audit, and HITL modules are still being built.
+> Core modules are implemented and functional. Audit and HITL modules are stubbed for future implementation.
 
 ## What This Platform Is
 
 An **AI governance control plane** for enterprise LLM deployments. It sits between users and LLMs, enforcing policies, routing requests, and maintaining complete audit trails.
 
-**Core capabilities (planned):**
-- Policy enforcement at dual checkpoints (input and output)
-- Pluggable compliance modules (MNPI, HIPAA, PDPL, custom rules)
-- Human-in-the-loop workflows for high-risk decisions
-- Complete audit trail for regulatory examination
-- Multi-model routing with governance controls
+**Core capabilities:**
+- [x] Policy enforcement at dual checkpoints (input and output)
+- [x] Pluggable compliance modules (MNPI, PII detection, custom rules)
+- [x] Multi-model routing with governance controls
+- [x] Local model support (Ollama)
+- [ ] Human-in-the-loop workflows (stub)
+- [ ] Complete audit trail (stub)
 
 **Current implementation status:**
-- [x] Core policy models and interfaces (PolicyOutcome, PolicyContext, PolicyModule)
-- [x] Policy registry and configuration loader
-- [x] Policy engine with precedence resolution
-- [ ] Gateway (API routes and orchestration) - In progress
-- [ ] Model router (LLM abstraction) - Planned
-- [ ] Audit module (logging service) - Planned
-- [ ] HITL module (human review queue) - Planned
+- [x] **Policy Engine** - Complete with precedence resolution
+- [x] **Model Router** - Complete with Ollama, OpenAI, Anthropic support
+- [x] **Gateway** - Complete with dual checkpoint flow
+- [x] **Example Policies** - PII detection, MNPI compliance
+- [ ] **Audit Module** - Stub (logging placeholder)
+- [ ] **HITL Module** - Stub (review queue placeholder)
 
 ## What This Platform Governs
 
@@ -72,20 +72,142 @@ This is enforcement, not surveillance.
 
 ## Development
 
-See [CORE_MODULE_STEPS.md](CORE_MODULE_STEPS.md) for implementation progress and remaining work.
-
-### Getting Started
+### Quick Start
 
 ```bash
 # Install dependencies
 make install-dev
 
-# Run tests
+# Start Gateway (requires Ollama running)
+make gateway
+
+# Or run directly
+uv run python main.py
+```
+
+### Prerequisites
+
+- **Ollama** installed and running (`ollama serve`)
+- **Mistral model** installed (`ollama pull mistral`)
+- Python 3.10+
+
+### Testing
+
+```bash
+# Run all tests
 make test
 
 # Run a single test
 make test-one TEST=tests/test_policy_engine.py
 ```
+
+### Example API Calls
+
+#### ALLOW - Clean Request (Passes All Policies)
+
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "What is the weather today?"}]
+  }'
+```
+
+**Response:** `200 OK` with LLM response. No policy violations detected.
+
+#### BLOCK - MNPI Violation (Restricted Security)
+
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "What is the current stock price of AAPL?"}]
+  }'
+```
+
+**Response:** `403 Forbidden` - Request blocked. AAPL is on the restricted securities list.
+
+#### BLOCK - MNPI Keywords
+
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "I have insider information about an upcoming merger"}]
+  }'
+```
+
+**Response:** `403 Forbidden` - Request blocked. Contains MNPI keywords.
+
+#### REDACT - PII Detection (Email & Phone)
+
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Please send the report to john.doe@example.com or call me at 555-123-4567"}]
+  }'
+```
+
+**Response:** `200 OK` with redacted content. PII is replaced with tokens like `[REDACTED:EMAIL:ref_0001]`.
+
+#### REDACT - SSN Detection
+
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "My social security number is 123-45-6789"}]
+  }'
+```
+
+**Response:** `200 OK` with redacted SSN. Request proceeds but sensitive data is masked.
+
+#### ESCALATE - Human Review Required
+
+```bash
+# TODO: ESCALATE outcome not yet fully implemented
+# This would trigger human-in-the-loop review workflow
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Request that triggers escalation policy"}]
+  }'
+```
+
+**Response:** `202 Accepted` - Request queued for human review. Review ID returned.
+
+---
+
+API docs available at: http://localhost:8000/docs
+
+## Roadmap
+
+### Agent Workflow Support
+
+The platform will support agentic workflows by governing each action—both LLM calls and tool executions.
+
+**Planned features:**
+- [ ] Tool execution endpoint (`POST /api/tools`)
+- [ ] Tool registry (register and manage available tools)
+- [ ] Tool-specific policies (govern database queries, API calls, file operations)
+- [ ] Agent workflow tracking (link multi-step workflows)
+- [ ] Tool allowlists (user/role-based tool access)
+
+**How it works:**
+- Agents route LLM calls through `/api/chat` (already supported)
+- Agents route tool calls through `/api/tools` (planned)
+- Each action gets policy evaluation independently
+- Complete audit trail of multi-step workflows
+
+See [ADR-006](architectural-decision-records/adr-006-agent-workflow-support.md) for detailed design.
+
+### Other Planned Features
+
+- [ ] **Audit Module** - Real logging and audit trail storage
+- [ ] **HITL Module** - Human review queue and workflows
+- [ ] **Additional Policies** - HIPAA, prompt injection, custom compliance rules
+- [ ] **Production Hardening** - Monitoring, scaling, security enhancements
 
 ### Architecture Decisions
 
