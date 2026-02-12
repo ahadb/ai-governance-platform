@@ -1,7 +1,5 @@
 """
 Model Router module - LLM abstraction layer
-
-TODO: Implement ModelRouter core class that:
 """
 
 from model_router.config import ModelRouterConfig, load_router_config
@@ -17,8 +15,10 @@ from model_router.models import LLMMessage, LLMRequest, LLMResponse
 from model_router.providers import (
     AnthropicProvider,
     LLMProvider,
+    OllamaProvider,
     OpenAIProvider,
 )
+from model_router.router import ModelRouter
 
 __all__ = [
     "LLMMessage",
@@ -27,6 +27,8 @@ __all__ = [
     "LLMProvider",
     "OpenAIProvider",
     "AnthropicProvider",
+    "OllamaProvider",
+    "ModelRouter",
     "ModelRouterConfig",
     "load_router_config",
     "ModelRouterError",

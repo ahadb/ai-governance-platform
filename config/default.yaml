@@ -31,10 +31,12 @@ policies:
 
 # Model Router Configuration
 model_router:
-  default_model: gpt-4
-  fallback_model: gpt-3.5-turbo
-  timeout_seconds: 30
+  default_model: mistral  # Default Ollama model (change to your installed model)
+  fallback_model: llama2
+  timeout_seconds: 60  # Ollama can be slower, increase timeout
   max_retries: 3
+  use_ollama: true  # Use Ollama for local models (default: true)
+  ollama_base_url: http://localhost:11434  # Ollama API URL
 
 # Audit Configuration
 audit:

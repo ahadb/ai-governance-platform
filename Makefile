@@ -1,4 +1,4 @@
-.PHONY: install install-dev test test-one lint format clean run sync
+.PHONY: install install-dev test test-one lint format clean run gateway sync
 
 # Install uv if not already installed
 uv-check:
@@ -45,6 +45,10 @@ clean:
 # Run the application
 run: uv-check
 	uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Run the Gateway application
+gateway: uv-check
+	uv run python main.py
 
 # Setup database migrations
 migrate: uv-check

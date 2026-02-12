@@ -42,6 +42,14 @@ class ModelRouterConfig(BaseModel):
         None,
         description="Anthropic API key (from env: ANTHROPIC_API_KEY)",
     )
+    use_ollama: bool = Field(
+        default=True,
+        description="Use Ollama provider for local models (default: true)",
+    )
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        description="Base URL for Ollama API",
+    )
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -91,12 +99,14 @@ def load_router_config(config_path: str) -> ModelRouterConfig:
     
     try:
         config = ModelRouterConfig(
-            default_model=router_data.get("default_model", "gpt-4"),
+            default_model=router_data.get("default_model", "llama2"),
             fallback_model=router_data.get("fallback_model"),
-            timeout_seconds=float(router_data.get("timeout_seconds", 30.0)),
+            timeout_seconds=float(router_data.get("timeout_seconds", 60.0)),
             max_retries=int(router_data.get("max_retries", 3)),
             openai_api_key=openai_key,
             anthropic_api_key=anthropic_key,
+            use_ollama=bool(router_data.get("use_ollama", True)),
+            ollama_base_url=router_data.get("ollama_base_url", "http://localhost:11434"),
         )
     except Exception as e:
         raise ValueError(f"Invalid Model Router configuration: {e}") from e

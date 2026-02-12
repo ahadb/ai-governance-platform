@@ -1,0 +1,49 @@
+# Configuration for using Ollama local models
+
+# Policy Engine Configuration
+policies:
+  - name: pii_detection
+    enabled: true
+    config:
+      redact_emails: true
+      redact_phones: true
+      redact_ssn: true
+      redact_credit_cards: true
+      redact_bank_accounts: true
+      
+  - name: mnpi_check
+    enabled: true
+    config:
+      securities: ["AAPL", "MSFT", "GOOGL"]
+      
+  - name: example_policy
+    enabled: true
+    config: {}
+
+# Model Router Configuration (using Ollama)
+model_router:
+  default_model: llama2  # Change to your installed Ollama model
+  fallback_model: mistral
+  timeout_seconds: 60  # Ollama can be slower, increase timeout
+  max_retries: 3
+  use_ollama: true  # Enable Ollama provider
+  ollama_base_url: http://localhost:11434
+
+# Audit Configuration
+audit:
+  async_logging: true
+  retention_days: 90
+  batch_size: 100
+
+# HITL Configuration
+hitl:
+  queue_name: hitl_reviews
+  timeout_seconds: 3600
+  auto_approve_after_hours: 24
+
+# Gateway Configuration
+gateway:
+  rate_limit_per_minute: 100
+  max_request_size_mb: 10
+  enable_cors: true
+
