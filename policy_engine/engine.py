@@ -8,6 +8,8 @@ against requests and responses.
 import time
 from typing import List, Optional
 
+from common.logging import get_logger
+from audit.service import AuditService
 from policy_engine.config_loader import PolicyConfig, load_policy_config
 from policy_engine.interfaces import PolicyModule
 from policy_engine.models import (
@@ -17,6 +19,8 @@ from policy_engine.models import (
     PolicyResult,
 )
 from policy_engine.registry import PolicyRegistry
+
+logger = get_logger(__name__)
 
 
 class PolicyEngine:
@@ -31,6 +35,7 @@ class PolicyEngine:
         self,
         registry: PolicyRegistry,
         config_path: Optional[str] = None,
+        audit: Optional[AuditService] = None,
     ):
         """
         Initialize the policy engine.
@@ -39,10 +44,12 @@ class PolicyEngine:
             registry: PolicyRegistry containing registered policy modules
             config_path: Path to YAML config file. If None, no config is loaded.
                         Can be loaded later with load_configuration().
+            audit: AuditService for audit logging (optional)
         """
         self._registry = registry
         self._config_path: Optional[str] = config_path
         self._active_policies: List[tuple[str, PolicyModule]] = []  # (name, module) tuples
+        self._audit = audit
         
         if config_path:
             self.load_configuration(config_path)
@@ -82,9 +89,12 @@ class PolicyEngine:
                 self._active_policies.append((policy_name, policy_module))
         
         if missing_policies:
-            # TODO: Replace print() with proper logging (structlog)
             # TODO: Make this configurable - fail hard in production, warn in dev
-            print(f"Warning: Config references policies not in registry: {missing_policies}")
+            logger.warning(
+                "config_policies_not_in_registry",
+                missing_policies=missing_policies,
+                config_path=self._config_path,
+            )
 
     def get_active_policies(self) -> List[tuple[str, PolicyModule]]:
         """
@@ -112,6 +122,17 @@ class PolicyEngine:
         all_results: List[PolicyResult] = []
         evaluated_policy_names: List[str] = []
         
+        # Audit: Policy evaluation start
+        if self._audit and context.request_id:
+            self._audit.log(
+                context.request_id,
+                "policy_evaluation_start",
+                {
+                    "checkpoint": context.checkpoint,
+                    "trace_id": context.metadata.get("trace_id"),
+                },
+            )
+        
         # Run each active policy
         for policy_name, policy_module in self._active_policies:
             try:
@@ -123,9 +144,30 @@ class PolicyEngine:
                 # Update context with prior outcomes for next policy
                 context.prior_outcomes.append(result.outcome)
                 
+                # Audit: Individual policy evaluation
+                if self._audit and context.request_id:
+                    self._audit.log(
+                        context.request_id,
+                        "policy_evaluated",
+                        {
+                            "policy_name": policy_name,
+                            "outcome": result.outcome,
+                            "checkpoint": context.checkpoint,
+                            "trace_id": context.metadata.get("trace_id"),
+                        },
+                    )
+                
             except Exception as e:
                 # Policy evaluation failed - log and continue or fail?
                 # For now, we'll create a BLOCK result for safety
+                logger.error(
+                    "policy_evaluation_failed",
+                    policy_name=policy_name,
+                    request_id=context.request_id,
+                    checkpoint=context.checkpoint,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
                 error_result = PolicyResult(
                     outcome=PolicyOutcome.BLOCK,
                     reason=f"Policy '{policy_name}' evaluation failed: {str(e)}",
@@ -135,6 +177,19 @@ class PolicyEngine:
                 all_results.append(error_result)
                 evaluated_policy_names.append(policy_name)
                 context.prior_outcomes.append(PolicyOutcome.BLOCK)
+                
+                # Audit: Policy evaluation failure
+                if self._audit and context.request_id:
+                    self._audit.log(
+                        context.request_id,
+                        "policy_evaluation_failed",
+                        {
+                            "policy_name": policy_name,
+                            "checkpoint": context.checkpoint,
+                            "error": str(e),
+                            "trace_id": context.metadata.get("trace_id"),
+                        },
+                    )
         
         # Apply precedence rules to determine final outcome
         if not all_results:
@@ -160,6 +215,20 @@ class PolicyEngine:
         
         # Calculate evaluation time
         evaluation_time_ms = (time.time() - start_time) * 1000
+        
+        # Audit: Policy evaluation complete
+        if self._audit and context.request_id:
+            self._audit.log(
+                context.request_id,
+                "policy_evaluation_complete",
+                {
+                    "checkpoint": context.checkpoint,
+                    "final_outcome": final_outcome,
+                    "policies_evaluated": evaluated_policy_names,
+                    "evaluation_time_ms": evaluation_time_ms,
+                    "trace_id": context.metadata.get("trace_id") if context.metadata else None,
+                },
+            )
         
         return PolicyEvaluationResult(
             final_outcome=final_outcome,
