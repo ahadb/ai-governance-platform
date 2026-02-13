@@ -1,8 +1,5 @@
 # AI Governance Platform
 
-> **Status:** 🚧 Work in Progress  
-> Core modules are implemented and functional. Audit and HITL modules are fully implemented with PostgreSQL-backed storage.
-
 ## Architecture Diagrams
 
 - **[Architecture Diagram](https://lucid.app/lucidchart/3e60cae0-e210-4855-ad53-53f0a3bae7f3/edit?invitationId=inv_7d457cde-50f8-4740-b81f-c64bf82ccd12&page=0_0#)** - System architecture and component relationships
