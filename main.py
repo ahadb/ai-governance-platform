@@ -13,9 +13,11 @@ load_dotenv()
 from audit import AuditDB, AuditRepository, AuditService
 from common.logging import configure_logging, get_logger
 from gateway import create_app, GatewayOrchestrator
+from hitl import HITLRepository, HITLService
 from model_router import ModelRouter, load_router_config
 from policies.example_policy import ExamplePolicy
 from policies.finance import MNPIPolicy, PIIDetectionPolicy
+from policies.test_escalate_policy import TestEscalatePolicy
 from policy_engine.engine import PolicyEngine
 from policy_engine.registry import PolicyRegistry
 
@@ -65,11 +67,13 @@ def create_gateway_app(config_path: str = "config/default.yaml"):
     
     # Initialize Audit Service (or None if DB failed)
     audit_service = None
+    audit_service_initialized = False
     if audit_db:
         try:
             audit_repository = AuditRepository(audit_db)
             audit_service = AuditService(audit_repository)
             audit_status = "initialized"
+            audit_service_initialized = True
             logger.info("audit_service_initialized")
         except Exception as e:
             audit_status = f"service_failed: {e}"
@@ -81,6 +85,22 @@ def create_gateway_app(config_path: str = "config/default.yaml"):
     else:
         audit_status = "disabled (database unavailable)"
     
+    # Initialize HITL Service (or None if DB failed)
+    hitl_service = None
+    hitl_service_initialized = False
+    if audit_db:
+        try:
+            hitl_repository = HITLRepository(audit_db)
+            hitl_service = HITLService(hitl_repository)
+            hitl_service_initialized = True
+            logger.info("hitl_service_initialized")
+        except Exception as e:
+            logger.error(
+                "hitl_service_initialization_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+    
     # Initialize Policy Engine
     logger.info("initializing_policy_engine")
     policy_registry = PolicyRegistry()
@@ -89,6 +109,7 @@ def create_gateway_app(config_path: str = "config/default.yaml"):
     policy_registry.register("example_policy", ExamplePolicy())
     policy_registry.register("pii_detection", PIIDetectionPolicy())
     policy_registry.register("mnpi_check", MNPIPolicy())
+    policy_registry.register("test_escalate", TestEscalatePolicy())  # Test policy for HITL
     
     # Create engine with config and audit service
     policy_engine = PolicyEngine(
@@ -111,21 +132,25 @@ def create_gateway_app(config_path: str = "config/default.yaml"):
     providers_str = ", ".join(providers) if providers else "none"
     logger.info("model_router_initialized", providers=providers)
     
-    # Create orchestrator with audit service
+    # Create orchestrator with audit and HITL services
     orchestrator = GatewayOrchestrator(
         policy_engine=policy_engine,
         model_router=model_router,
         audit=audit_service,  # Pass real audit service (or None if failed)
+        hitl=hitl_service,  # Pass real HITL service (or None if failed)
     )
     
-    app = create_app(orchestrator, enable_cors=True)
+    app = create_app(orchestrator, hitl_service=hitl_service, enable_cors=True)
     
     app.state.audit_db = audit_db
     
     app.state.init_info = {
         "audit_status": audit_status,
+        "audit_db_connected": audit_db is not None and audit_db.test_connection() if audit_db else False,
+        "audit_service_initialized": audit_service_initialized,
+        "hitl_service_initialized": hitl_service_initialized,
         "active_policies": active_policies,
-        "providers": providers_str,
+        "model_router_providers": providers_str,
     }
     
     # TODO: improve log level labels
@@ -133,10 +158,19 @@ def create_gateway_app(config_path: str = "config/default.yaml"):
     async def print_initialization_summary():
         """Print initialization summary after uvicorn startup messages."""
         init_info = app.state.init_info
-        print(f"INFO:     Audit Service {init_info['audit_status']}")
-        print(f"INFO:     Policy Engine initialized ({init_info['active_policies']} active policies)")
-        print(f"INFO:     Model Router initialized (providers: {init_info['providers']})")
+        print("\n" + "="*70)
+        print("AI Governance Platform Gateway")
+        print("="*70)
+        print(f"INFO:     Audit Database: {'Connected' if init_info['audit_db_connected'] else 'Failed'}")
+        print(f"INFO:     Audit Service: {'Initialized' if init_info['audit_service_initialized'] else 'Disabled'}")
+        print(f"INFO:     HITL Service: {'Initialized' if init_info['hitl_service_initialized'] else 'Disabled'}")
+        print(f"INFO:     Policy Engine: Initialized ({init_info['active_policies']} active policies)")
+        print(f"INFO:     Model Router: Initialized (providers: {init_info['model_router_providers']})")
         print("INFO:     Gateway initialization complete")
+        print("="*70)
+        print(f"INFO:     Starting server on http://0.0.0.0:8000")
+        print(f"INFO:     API docs available at http://0.0.0.0:8000/docs")
+        print("="*70 + "\n")
     
     return app
 
