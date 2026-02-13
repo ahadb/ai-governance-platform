@@ -71,3 +71,18 @@ class ErrorResponse(BaseModel):
 
     model_config = ConfigDict(use_enum_values=True)
 
+
+class EscalateResponse(BaseModel):
+    """Response model for escalated requests pending human review."""
+
+    review_id: str = Field(..., description="Review ID for tracking the escalation")
+    status: str = Field(default="pending_review", description="Status of the request")
+    message: str = Field(..., description="Human-readable message about the escalation")
+    reason: str = Field(..., description="Policy reason for escalation")
+    trace_id: str = Field(..., description="Trace ID for end-to-end correlation")
+    checkpoint: Optional[str] = Field(
+        None, description="Checkpoint where escalation occurred ('input' or 'output')"
+    )
+
+    model_config = ConfigDict(use_enum_values=True)
+

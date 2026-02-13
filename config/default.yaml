@@ -18,6 +18,11 @@ policies:
     config:
       # watch_list: /data/securities.txt  # Optional: path to watchlist file
       securities: ["AAPL", "MSFT", "GOOGL"]  # Restricted securities list
+  
+  # Test Escalate Policy (for testing HITL module)
+  - name: test_escalate
+    enabled: true
+    config: {}
   #     
   # - name: prompt_injection
   #   enabled: true

@@ -9,7 +9,7 @@ from common.logging import get_logger
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from gateway.models import ChatRequest, ChatResponse, ErrorResponse
+from gateway.models import ChatRequest, ChatResponse, ErrorResponse, EscalateResponse
 from gateway.orchestrator import GatewayOrchestrator
 
 logger = get_logger(__name__)
@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 
 def create_app(
     orchestrator: GatewayOrchestrator,
+    hitl_service=None,
     enable_cors: bool = True,
 ) -> FastAPI:
     """
@@ -24,6 +25,7 @@ def create_app(
     
     Args:
         orchestrator: GatewayOrchestrator instance
+        hitl_service: Optional HITLService instance for review management
         enable_cors: Whether to enable CORS middleware
         
     Returns:
@@ -123,19 +125,40 @@ def create_app(
                 exc.headers = {"X-Trace-Id": trace_id}
                 raise exc
             elif "escalated" in error_msg.lower():
+                # Extract review_id and reason from error message
+                # Format: "Request escalated for human review (ID: {review_id}): {reason}"
+                # Format: "Response escalated for human review (ID: {review_id}): {reason}"
+                import re
+                review_id_match = re.search(r"\(ID:\s*([^)]+)\)", error_msg)
+                review_id = review_id_match.group(1) if review_id_match else "unknown"
+                
+                # Extract reason (everything after the colon after the review_id)
+                reason_match = re.search(r"\):\s*(.+)", error_msg)
+                reason = reason_match.group(1).strip() if reason_match else error_msg
+                
+                # Determine checkpoint from error message
+                checkpoint = "input" if error_msg.startswith("Request escalated") else "output"
+                
                 logger.info(
                     "api_request_escalated",
                     user_id=user_id,
-                    error=error_msg,
-                    error_code="POLICY_ESCALATED",
+                    review_id=review_id,
+                    reason=reason,
+                    checkpoint=checkpoint,
                 )
+                
+                escalate_response = EscalateResponse(
+                    review_id=review_id,
+                    status="pending_review",
+                    message=f"Request has been escalated for human review (Review ID: {review_id})",
+                    reason=reason,
+                    trace_id=trace_id,
+                    checkpoint=checkpoint,
+                )
+                
                 exc = HTTPException(
                     status_code=202,  # Accepted but pending review
-                    detail=ErrorResponse(
-                        error=error_msg,
-                        error_code="POLICY_ESCALATED",
-                        details={"reason": error_msg, "trace_id": trace_id},
-                    ).model_dump(),
+                    detail=escalate_response.model_dump(),
                 )
                 exc.headers = {"X-Trace-Id": trace_id}
                 raise exc
@@ -171,6 +194,13 @@ def create_app(
         finally:
             # Clear contextvars after request completes
             structlog.contextvars.clear_contextvars()
+    
+    # Add HITL review management endpoints if service is available
+    if hitl_service:
+        from gateway.hitl_api import create_hitl_router
+        hitl_router = create_hitl_router(hitl_service)
+        app.include_router(hitl_router)
+        logger.info("hitl_api_routes_registered")
     
     return app
 

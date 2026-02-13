@@ -37,11 +37,20 @@ CREATE TABLE audit_events (
 ## Migration Files
 
 - `001_create_audit_events_table.sql` - Creates audit_events table and indexes
+- `002_create_hitl_reviews_table.sql` - Creates hitl_reviews table with PostgreSQL queue support
 
 ## Rollback
 
 To rollback a migration, manually drop the table:
+
+**Rollback 001:**
 ```sql
 DROP TABLE IF EXISTS audit_events CASCADE;
+```
+
+**Rollback 002:**
+```sql
+DROP TYPE IF EXISTS review_status CASCADE;
+DROP TABLE IF EXISTS hitl_reviews CASCADE;
 ```
 

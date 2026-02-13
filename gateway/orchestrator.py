@@ -10,6 +10,7 @@ from typing import Optional, Union
 
 from common.logging import get_logger
 from audit.service import AuditService
+from hitl.service import HITLService
 from model_router import LLMMessage, LLMRequest, LLMResponse, ModelRouter
 from model_router.exceptions import ModelRouterError
 from policy_engine.engine import PolicyEngine
@@ -25,9 +26,9 @@ class AuditStub:
         """Stub audit logging - does nothing."""
         pass
 
-# TODO: Replace with real HITL module when implemented
+# TODO: Remove HITLStub once all deployments use real HITLService
 class HITLStub:
-    """Stub for human-in-the-loop - will be replaced with real implementation."""
+    """Stub for human-in-the-loop - fallback when HITLService is not available."""
     
     def escalate(self, request_id: str, context: PolicyContext, reason: str) -> str:
         """
@@ -55,7 +56,7 @@ class GatewayOrchestrator:
         policy_engine: PolicyEngine,
         model_router: ModelRouter,
         audit: Optional[Union[AuditService, AuditStub]] = None,
-        hitl: Optional[HITLStub] = None,
+        hitl: Optional[Union[HITLService, HITLStub]] = None,
     ):
         """
         Initialize the Gateway Orchestrator.
@@ -64,12 +65,12 @@ class GatewayOrchestrator:
             policy_engine: PolicyEngine instance for policy evaluation
             model_router: ModelRouter instance for LLM routing
             audit: AuditService instance (or AuditStub if not available)
-            hitl: HITL module (stub for now)
+            hitl: HITLService instance (or HITLStub if not available)
         """
         self._policy_engine = policy_engine
         self._model_router = model_router
         self._audit = audit or AuditStub()  # Use real AuditService if provided, else stub
-        self._hitl = hitl or HITLStub()
+        self._hitl = hitl or HITLStub()  # Use real HITLService if provided, else stub
 
     def process_request(
         self,
@@ -139,6 +140,32 @@ class GatewayOrchestrator:
         
         # Policy Engine audits its own evaluation
         input_result = self._policy_engine.evaluate(input_context)
+        
+        # Check for approved review bypass if ESCALATE is returned
+        if input_result.final_outcome == PolicyOutcome.ESCALATE:
+            if self._hitl and hasattr(self._hitl, 'check_approved_review'):
+                approved_review = self._hitl.check_approved_review(
+                    prompt=prompt,
+                    user_id=user_id,
+                    checkpoint="input",
+                    max_age_days=7,
+                )
+                if approved_review:
+                    logger.info(
+                        "escalate_overridden_by_approved_review",
+                        request_id=request_id,
+                        review_id=approved_review.id,
+                        original_policy=input_result.final_result.policy_name,
+                    )
+                    # Override: Change ESCALATE to ALLOW
+                    from policy_engine.models import PolicyResult
+                    input_result.final_outcome = PolicyOutcome.ALLOW
+                    input_result.final_result = PolicyResult(
+                        outcome=PolicyOutcome.ALLOW,
+                        reason=f"Bypassed via approved review {approved_review.id}",
+                        policy_name="bypass_logic",
+                        confidence_score=1.0,
+                    )
         
         # Handle input checkpoint outcomes
         if input_result.final_outcome == PolicyOutcome.BLOCK:
@@ -234,6 +261,44 @@ class GatewayOrchestrator:
         
         # Policy Engine audits its own evaluation
         output_result = self._policy_engine.evaluate(output_context)
+        
+        # Check for approved review bypass if ESCALATE is returned
+        if output_result.final_outcome == PolicyOutcome.ESCALATE:
+            if self._hitl and hasattr(self._hitl, 'check_approved_review'):
+                approved_review = self._hitl.check_approved_review(
+                    prompt=prompt_to_use,
+                    user_id=user_id,
+                    checkpoint="output",
+                    max_age_days=7,
+                )
+                if approved_review:
+                    logger.info(
+                        "escalate_overridden_by_approved_review",
+                        request_id=request_id,
+                        review_id=approved_review.id,
+                        original_policy=output_result.final_result.policy_name,
+                        checkpoint="output",
+                    )
+                    # Audit: Bypass via approved review
+                    if self._audit:
+                        self._audit.log(
+                            request_id,
+                            "response_bypassed_approved_review",
+                            {
+                                "review_id": approved_review.id,
+                                "original_review_created_at": approved_review.created_at.isoformat(),
+                                "trace_id": trace_id,
+                            },
+                        )
+                    # Override: Change ESCALATE to ALLOW
+                    from policy_engine.models import PolicyResult
+                    output_result.final_outcome = PolicyOutcome.ALLOW
+                    output_result.final_result = PolicyResult(
+                        outcome=PolicyOutcome.ALLOW,
+                        reason=f"Bypassed via approved review {approved_review.id}",
+                        policy_name="bypass_logic",
+                        confidence_score=1.0,
+                    )
         
         # Handle output checkpoint outcomes
         if output_result.final_outcome == PolicyOutcome.BLOCK:
